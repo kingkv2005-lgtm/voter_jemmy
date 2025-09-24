@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Voter Signup / Login</title>
+<style>
+  body { font-family: Arial; background:#f5f5f5; display:flex; justify-content:center; align-items:center; min-height:100vh; margin:0; }
+  .card { background:white; padding:20px; border-radius:10px; box-shadow:0 0 15px rgba(0,0,0,0.2); max-width:400px; width:100%; text-align:center;}
+  input { width:95%; padding:10px; margin:8px 0; border-radius:5px; border:1px solid #ccc;}
+  button { padding:10px; background:#007BFF; color:white; border:none; border-radius:5px; cursor:pointer; width:100%; margin-top:10px;}
+  button:hover { background:#0056b3;}
+  table { width:100%; border-collapse:collapse; margin-top:10px;}
+  th,td { text-align:left; padding:8px; border-bottom:1px solid #ddd;}
+  th { background:#f0f0f0; width:35%;}
+  img { width:150px; height:150px; border-radius:8px; object-fit:cover; margin:10px auto; display:block; border:1px solid #ccc; }
+</style>
+</head>
+<body>
+
+<div class="card" id="signupCard">
+  <h2>Voter Signup</h2>
+  <input id="signupVoterID" placeholder="Voter ID">
+  <input id="signupEmail" placeholder="Email">
+  <input id="signupPassword" type="password" placeholder="Password">
+  <button id="signupBtn">Sign Up</button>
+  <p>Already registered? <a href="#" onclick="showLogin()">Login</a></p>
+</div>
+
+<div class="card" id="loginCard" style="display:none;">
+  <h2>Voter Login</h2>
+  <input id="loginEmail" placeholder="Email">
+  <input id="loginPassword" type="password" placeholder="Password">
+  <button id="loginBtn">Login</button>
+  <p>New voter? <a href="#" onclick="showSignup()">Sign Up</a></p>
+</div>
+
+<div class="card" id="voterCard" style="display:none;">
+  <h2>Your Voter Information</h2>
+  <img id="voterPhoto" src="images/default.jpg" alt="Voter Photo">
+  <table id="voterTable"></table>
+  <button onclick="logout()">Logout</button>
+</div>
+
+<!-- Firebase SDK compat -->
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
+
+<script>
+  const firebaseConfig = {
+    apiKey: "AIzaSyARC0sOozRd1K6ygk_XLtiqikJsHE6mXcg",
+    authDomain: "smartevm-1cec6.firebaseapp.com",
+    projectId: "smartevm-1cec6"
+  };
+  firebase.initializeApp(firebaseConfig);
+  const auth = firebase.auth();
+  const db = firebase.firestore();
+
+  const signupCard = document.getElementById('signupCard');
+  const loginCard = document.getElementById('loginCard');
+  const voterCard = document.getElementById('voterCard');
+  const voterTable = document.getElementById('voterTable');
+  const voterPhoto = document.getElementById('voterPhoto');
+
+  function showLogin() {
+    signupCard.style.display='none';
+    loginCard.style.display='block';
+    voterCard.style.display='none';
+  }
+
+  function showSignup() {
+    loginCard.style.display='none';
+    signupCard.style.display='block';
+    voterCard.style.display='none';
+  }
+
+  document.getElementById('signupBtn').addEventListener('click', async () => {
+    const voterID = document.getElementById('signupVoterID').value.trim();
+    const email = document.getElementById('signupEmail').value.trim();
+    const password = document.getElementById('signupPassword').value;
+
+    if(!voterID || !email || !password) {
+      alert("Fill all fields");
+      return;
+    }
+
+    const voterDoc = await db.collection("voters").doc(voterID).get();
+    if(!voterDoc.exists) {
+      alert("Invalid Voter ID");
+      return;
+    }
+
+    try {
+      await auth.createUserWithEmailAndPassword(email, password);
+      await db.collection("voters").doc(voterID).update({ voterEmail: email });
+      alert("Signup successful! Please login now.");
+      showLogin();
+    } catch(err) {
+      if(err.code === 'auth/email-already-in-use') {
+        alert("Email already registered. Please login.");
+        showLogin();
+      } else {
+        alert("Error: "+err.message);
+      }
+    }
+  });
+
+  document.getElementById('loginBtn').addEventListener('click', async () => {
+    const email = document.getElementById('loginEmail').value.trim();
+    const password = document.getElementById('loginPassword').value;
+
+    if(!email || !password) {
+      alert("Enter email and password");
+      return;
+    }
+
+    try {
+      await auth.signInWithEmailAndPassword(email, password);
+      loadVoterData(email);
+    } catch(err) {
+      alert("Login failed: "+err.message);
+    }
+  });
+
+  async function loadVoterData(email) {
+    signupCard.style.display='none';
+    loginCard.style.display='none';
+    voterCard.style.display='block';
+
+    const q = await db.collection("voters").where("voterEmail","==",email).get();
+    if(q.empty) {
+      voterTable.innerHTML="<tr><td>No voter record found</td></tr>";
+      voterPhoto.src = "images/default.jpg";
+      return;
+    }
+
+    const docSnap = q.docs[0];
+    const data = docSnap.data();
+    const voterID = docSnap.id;
+
+    // Load photo
+    voterPhoto.src = `images/${voterID}.jpg`;
+    voterPhoto.onerror = () => { voterPhoto.src = "images/default.jpg"; };
+
+    const rows = `
+      <tr><th>Name</th><td>${data.name || 'N/A'}</td></tr>
+      <tr><th>Date of Birth</th><td>${data.dob || 'N/A'}</td></tr>
+      <tr><th>Voter ID</th><td>${voterID}</td></tr>
+      <tr><th>Mobile number</th><td>${data.mobilenumber || 'N/A'}</td></tr>
+      <tr><th>Fingerprint Template</th><td>${data.fingerprint_template || 'N/A'}</td></tr>
+    `;
+    voterTable.innerHTML = rows;
+  }
+
+  function logout() {
+    auth.signOut();
+    voterCard.style.display='none';
+    loginCard.style.display='block';
+  }
+
+  auth.onAuthStateChanged(user => {
+    if(user) loadVoterData(user.email);
+    else showLogin();
+  });
+</script>
+</body>
+</html>
